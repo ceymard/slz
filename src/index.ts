@@ -44,6 +44,14 @@ export class Serializable {
     return deserialize(obj, this)
   }
 
+  static nullable<S extends Serializable>(this: new () => S): Serializer<S | null> {
+    return serializerFor(this).nullable()
+  }
+
+  static optional<S extends Serializable>(this: new () => S): Serializer<S> {
+    return serializerFor(this).optional()
+  }
+
   serialize(): any {
     return serialize(this)
   }
@@ -99,10 +107,16 @@ export abstract class Serializer<T> {
           return typeof val === 'function' ? val(d) : val
         }
       },
-      s => this.serialize
+      s => this.serialize(s)
     )
   }
 
+}
+
+export function throwIfNot<T>(cond: string | INewAble<T>, v: T, msg?: string) {
+  if (typeof cond === 'string' && typeof v !== cond || typeof cond !== 'string' && !(v instanceof (cond)))
+    throw new Error(msg || 'wrong type')
+  return v
 }
 
 
@@ -127,19 +141,11 @@ export class EitherSerializer<A, B> extends Serializer<A | B> {
 }
 
 
-export const StringSerializer = Serializer.create<string>(
-  obj => obj ? obj.toString() : '',
-  obj => obj ? obj.toString() : ''
-)
-
-
-
-
 export class ObjectSerializer<T, Keys extends keyof T = keyof T> extends Serializer<T> {
 
   constructor(
     public props: {[K in Keys]: SerializerRef<T[K]>},
-    public constr?: new (...a: any[]) => Partial<T>
+    public constr?: new () => Partial<T>
   ) {
     super()
   }
@@ -147,13 +153,27 @@ export class ObjectSerializer<T, Keys extends keyof T = keyof T> extends Seriali
   deserialize(obj: any): T {
     var n: any = this.constr ? new this.constr() /* Object.create(this.constr.prototype) */ : {}
     for (var k of Object.getOwnPropertyNames(this.props)) {
-      n[k] = serializerFor(this.props[k as Keys]!).deserialize(obj[k])
+      try {
+        var res = serializerFor(this.props[k as Keys]!).deserialize(obj[k])
+        if (res !== undefined)
+          n[k] = res
+      } catch {
+
+      } finally {
+
+        if (!n[k])
+          throw new Error(`could not deserialize property \`${k}\``)
+      }
     }
     return n
   }
 
   serialize(obj: T) {
-
+    var res: any = {}
+    for (var k of Object.getOwnPropertyNames(this.props)) {
+      res[k] = serializerFor(this.props[k as Keys]!).serialize((obj as any)[k])
+    }
+    return res
   }
 
 }
@@ -200,7 +220,7 @@ export function object<T, Keys extends keyof T = keyof T>(
   return new ObjectSerializer(props, constr)
 }
 
-export const string: Serializer<string> = Serializer.create<string>(a => a ? a.toString() : '', a => a ? a.toString() : '')
+export const string: Serializer<string> = Serializer.create<string>(a => throwIfNot('string', a), a => throwIfNot('string', a))
 export const boolean: Serializer<boolean> = Serializer.create<boolean>(a => !!a, a => !!a)
 
 // Maybe should create an error here if we have NaN
@@ -210,9 +230,11 @@ export const number: Serializer<number> = Serializer.create<number>(a => {
   return res
 }, a => parseFloat(a as any))
 
-export const date: Serializer<Date> = Serializer.create<Date>(a => new Date(a), a => a.getTime())
-export const regexp: Serializer<RegExp> = Serializer.create<RegExp>(a => new RegExp(a.source, a.flags),
+export const date: Serializer<Date> = Serializer.create<Date>(a => new Date(throwIfNot('number', a)), a => throwIfNot(Date, a).getTime())
+export const regexp: Serializer<RegExp> = Serializer.create<RegExp>(a => new RegExp(throwIfNot(RegExp, a).source, a.flags),
   a => {
+    if (!a || !a.source || !a.flags)
+      throw new Error(`not a serialized RegExp`)
     return {source: a.source,
       flags: ''
         + a.sticky ? 'y' : ''
@@ -233,6 +255,7 @@ export function setOf<A>(type: SerializerRef<A>): Serializer<Set<A>> {
       return s
     },
     s => {
+      if (!(s instanceof Set)) throw new Error(`not a set`)
       const arr = Array.from(s)
       const slz = serializerFor(type)
       return arr.map(_ => slz.serialize(_))
@@ -251,10 +274,11 @@ export function mapOf<A, B>(keytype: SerializerRef<A>, valuetype: SerializerRef<
       return m
     },
     m => {
+      if (!(m instanceof Map)) throw new Error(`not a map`)
       const arr = Array.from(m)
-      const slz_a = serializerFor(keytype)
-      const slz_b = serializerFor(valuetype)
-      return arr.map(_ => [slz_a.serialize(_[0]), slz_b.serialize(_[1])])
+      const slz_key = serializerFor(keytype)
+      const slz_value = serializerFor(valuetype)
+      return arr.map(_ => [slz_key.serialize(_[0]), slz_value.serialize(_[1])])
     }
   )
 

@@ -1,0 +1,6 @@
+{
+	"name": "slz",
+	"devDependencies": {
+		"@types/node": "^8.0.34"
+	}
+}
