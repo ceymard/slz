@@ -1,27 +1,35 @@
-import {Serializable, ISerializer} from './index'
+import * as s from './index'
 
 class Test2 {
-
+  a: string
+  b: string = '3'
 }
 
-const tt: ISerializer<{
-  str: string, set: Set<number>
-}> = null!
+const t1 = s.object({a: s.string}, Test2)
+t1.register(Test2)
 
 
 // Either call the autoserializer, or define a custom one...
-@autoserializer
-class Test extends Serializable {
+class Test extends s.Serializable {
 
-  str: string
+  str: string | null
 
-  set: Set<number>
+  set: Set<number> | Set<string> | number
 
-  map: Map<Test2, string>
+  map: Map<Test2, string> | null
 
-  tests: Test2[]
+  tests: Test2[] | null
 }
 
-var t = Test.deserialize({})
-const test = s.object({a: s.set(Test2)})
-test.serialize({a: 1})
+const tt = s.object({
+  str: s.string.nullable().optional(),
+  set: s.setOf(s.number).or(s.setOf(s.string)).or(s.number).default(5),
+  map: s.mapOf(Test2, s.string).nullable(),
+  tests: s.arrayOf(Test2).nullable()
+}, Test)
+
+
+var t = tt.deserialize({str: 'zobi', tests: [{a: '84'}], map: [ [{a: '23'}, 'zobi'] ]})
+console.log(t)
+// const test = s.object({a: s.number})
+// test.serialize({a: 2})
