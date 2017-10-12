@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+        "target": "es6",
+        "module": "commonjs",
+	"moduleResolution": "node",
+        "declaration": true,
+        "sourceMap": true,
+        "experimentalDecorators": true,
+	"strict": true,
+        "outDir": "./lib",
+        "lib": ["es6"]
+    },
+    "files": [
+        "./src/index.ts",
+        "./src/test.ts"
+    ]
+
+}
