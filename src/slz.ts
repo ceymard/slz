@@ -31,51 +31,52 @@ export function clone<T>(base: T, newprops: {[K in keyof T]?: T[K]}) {
 }
 
 
-export class Serializer<T> {
+export class Builder<T> {
 
   public _help: string = ''
 
   // Just to be used as typeof s.TYPE
   public TYPE!: T
 
+  public base_class: Function = this.constructor
+
   from(unk: unknown): T {
     return unk as T
   }
 
-  default(def: T): Serializer<NonNullable<T>>
-  default(def: null): Serializer<NonNullable<T> | null>
+  default(def: T): Builder<NonNullable<T>>
+  default(def: null): Builder<NonNullable<T> | null>
   default(def: T | null) {
-    return this.transform((ser, v) => {
-      var res = ser.from(v)
-      return res !== undefined ? res : def
+    return this.transform((v) => {
+      return v !== undefined ? v : def
     })
   }
 
-  required(): Serializer<NonNullable<T>> {
-    return this.transform((ser, v) => {
-      var res = ser.from(v)
+  required(): Builder<NonNullable<T>> {
+    return this.transform((v) => {
+      var res = v
       if (res == undefined)
         throw new Error(`this reader requires a value`)
       return res as NonNullable<T>
     })
   }
 
-  or<U>(spec: Serializer<U>): Serializer<T | U> {
-    return this.transform((ser, v) => {
+  or<U>(spec: Builder<U>): Builder<T | U> {
+    return this.transform(v => {
       try {
-        return ser.from(v)
+        return v
       } catch {
         return spec.from(v)
       }
     })
   }
 
-  when<K extends keyof T, V extends T[K], U>(key: K, value: V, ser: Serializer<U>) {
+  when<K extends keyof T, V extends T[K], U>(key: K, value: V, ser: Builder<U>) {
 
   }
 
-  transform<U>(fn: (v: Serializer<T>, value: unknown) => U): Serializer<U> {
-    return new TransformSerializer(this, fn)
+  transform<U>(fn: (v: unknown) => U): Builder<U> {
+    return new TransformBuilder(this, fn)
   }
 
   help(): string
@@ -84,31 +85,32 @@ export class Serializer<T> {
   help(tpl?: TemplateStringsArray | string) {
     if (typeof tpl === 'undefined')
       return this._help
-    return clone(this as Serializer<T>, {_help: typeof tpl === 'string' ? tpl : tpl[0]})
+    return clone(this as Builder<T>, {_help: typeof tpl === 'string' ? tpl : tpl[0]})
   }
 
 }
 
 
-export class TransformSerializer<T, U> extends Serializer<U> {
-  constructor(public orig: Serializer<T>, public fn: (s: Serializer<T>, value: unknown) => U) {
+export class TransformBuilder<T, U> extends Builder<U> {
+  constructor(public orig: Builder<T>, public fn: (value: unknown) => U) {
     super()
     this._help = orig._help
+    this.base_class = orig.constructor
   }
 
   from(v: unknown): U {
-    return this.fn(this.orig, v)
+    return this.fn(v)
   }
 }
 
 
 
-export type ObjectSerializerProps<T> = {[K in keyof T]: Serializer<T[K]>}
+export type ObjectBuilderProps<T> = {[K in keyof T]: Builder<T[K]>}
 
 
-export class ObjectSerializer<T extends object> extends Serializer<T> {
+export class ObjectBuilder<T extends object> extends Builder<T> {
 
-  props<U>(props: ObjectSerializerProps<U>): ObjectSerializer<T & U> {
+  props<U>(props: ObjectBuilderProps<U>): ObjectBuilder<T & U> {
 
   }
 
@@ -123,7 +125,7 @@ export class ObjectSerializer<T extends object> extends Serializer<T> {
    *
    * @param props The properties that are to be tagged as optional
    */
-  optional<U>(props: ObjectSerializerProps<U>): ObjectSerializer<T & {[k in keyof U]?: U[k]}> {
+  optional<U>(props: ObjectBuilderProps<U>): ObjectBuilder<T & {[k in keyof U]?: U[k]}> {
 
   }
 
@@ -136,15 +138,15 @@ export class ObjectSerializer<T extends object> extends Serializer<T> {
    *  object specification.
    */
   createAs<T extends object, U extends T, V extends U = U>(
-    this: Serializer<U>,
+    this: Builder<U>,
     typ: new (...a: any[]) => T,
     typcheck2?: new (...a: any) => V
-  ): ObjectSerializer<T> {
+  ): ObjectBuilder<T> {
   // createAs<U extends T>(typ: new (...a: any[]) => U): ObjectSerializer<U> {
       return null!
   }
 
-  index<V>(values: Serializer<V>): ObjectSerializer<{[n: string]: V}> {
+  index<V>(values: Builder<V>): ObjectBuilder<{[n: string]: V}> {
     return null!
   }
 
@@ -155,7 +157,22 @@ export class ObjectSerializer<T extends object> extends Serializer<T> {
 }
 
 
-export class BooleanSerializer extends Serializer<boolean | undefined> {
+export class ArrayBuilder<T> extends Builder<T[]> {
+
+}
+
+export class IndexBuilder<T> extends Builder<T> {
+
+}
+
+export class TupleBuilder<T extends any[]> extends Builder<T | undefined> {
+  constructor(public builders: {[K in keyof T]: Builder<T[K]>}) {
+    super()
+  }
+}
+
+
+export class BooleanBuilder extends Builder<boolean | undefined> {
 
   from(t: unknown) {
     return t !== undefined ? !!t : undefined
@@ -163,7 +180,7 @@ export class BooleanSerializer extends Serializer<boolean | undefined> {
 
 }
 
-export class StringSerializer extends Serializer<string | undefined> {
+export class StringBuilder extends Builder<string | undefined> {
   from(t: unknown) {
     if (t == null) return undefined
     // FIXME check that t is indeed a string.
@@ -175,7 +192,7 @@ export class StringSerializer extends Serializer<string | undefined> {
   }
 }
 
-export class NumberSerializer extends Serializer<number | undefined> {
+export class NumberBuilder extends Builder<number | undefined> {
 
   from(t: unknown) {
     if (typeof t === 'number')
@@ -189,33 +206,33 @@ export class NumberSerializer extends Serializer<number | undefined> {
 }
 
 
-export function number(n: null): Serializer<number | null>
-export function number(def: number): Serializer<number>
-export function number(): Serializer<number | undefined>
-export function number(def?: any): Serializer<any> {
-  var res = new NumberSerializer()
+export function number(n: null): Builder<number | null>
+export function number(def: number): Builder<number>
+export function number(): Builder<number | undefined>
+export function number(def?: any): Builder<any> {
+  var res = new NumberBuilder()
   if (def !== undefined)
     return res.default(def)
   return res
 }
 
 
-export function string(): Serializer<string | undefined>
-export function string(def: null): Serializer<string | null>
-export function string(def: string): Serializer<string>
-export function string(def?: string | null): Serializer<string | null | undefined> {
-  var res = new StringSerializer()
+export function string(): Builder<string | undefined>
+export function string(def: null): Builder<string | null>
+export function string(def: string): Builder<string>
+export function string(def?: string | null): Builder<string | null | undefined> {
+  var res = new StringBuilder()
   if (def !== undefined)
     return res.default(def!)
   return res
 }
 
 
-export function object(): ObjectSerializer<{}>
-export function object<T extends object>(specs: ObjectSerializerProps<T>): ObjectSerializer<T>
-export function object<T extends object>(specs: ObjectSerializerProps<T>, inst?: new (...a: any[]) => T): Serializer<T>
-export function object<T extends object>(specs?: ObjectSerializerProps<T>, inst?: new (...a: any[]) => T): ObjectSerializer<any> {
-  var res = new ObjectSerializer<T>()
+export function object(): ObjectBuilder<object>
+export function object<T extends object>(specs: ObjectBuilderProps<T>): ObjectBuilder<T>
+export function object<T extends object>(specs: ObjectBuilderProps<T>, inst?: new (...a: any[]) => T): Builder<T>
+export function object<T extends object>(specs?: ObjectBuilderProps<T>, inst?: new (...a: any[]) => T): ObjectBuilder<any> {
+  var res = new ObjectBuilder<T>()
   if (specs)
     res = res.props(specs)
   if (inst)
@@ -224,28 +241,28 @@ export function object<T extends object>(specs?: ObjectSerializerProps<T>, inst?
 }
 
 
-export function indexed<T>(items: Serializer<T>): Serializer<{[name: string]: T}> {
+export function indexed<T>(items: Builder<T>): Builder<{[name: string]: T}> {
   return null!
 }
 
 
-export type Unserializify<T> = T extends Serializer<infer U> ? U : T
+export type Unserializify<T> = T extends Builder<infer U> ? U : T
 
 
-export function tuple<Arr extends Serializer<any>[]>(...sers: Arr): Serializer<{[K in keyof Arr]: Unserializify<Arr[K]>} | undefined> {
+export function tuple<Arr extends Builder<any>[]>(...sers: Arr): Builder<{[K in keyof Arr]: Unserializify<Arr[K]>}> {
   return null!
 }
 
 
-export function array<T>(items: Serializer<T>): Serializer<T[] | undefined> {
+export function array<T>(items: Builder<T>): Builder<T[] | undefined> {
   return null!
 }
 
 
-export function boolean(): BooleanSerializer
-export function boolean(def: boolean): Serializer<boolean>
+export function boolean(): BooleanBuilder
+export function boolean(def: boolean): Builder<boolean>
 export function boolean(def?: boolean) {
-  var res = new BooleanSerializer()
+  var res = new BooleanBuilder()
   if (def !== undefined)
     return res.default(def)
   return res
