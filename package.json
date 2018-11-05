@@ -1,6 +1,7 @@
 {
 	"name": "slz",
+  "main": "./lib/slz.js",
+  "types": "./lib/slz.d.ts",
 	"devDependencies": {
-		"@types/node": "^8.0.34"
 	}
 }
