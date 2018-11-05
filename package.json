@@ -1,5 +1,6 @@
 {
 	"name": "slz",
+  "version": "0.1.0",
   "main": "./lib/slz.js",
   "types": "./lib/slz.d.ts",
 	"devDependencies": {
