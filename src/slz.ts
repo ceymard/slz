@@ -118,10 +118,10 @@ export class Builder<T> {
     return new TransformBuilder(this, fn)
   }
 
-  then<U = T>(fn: (v: Ok<T>) => Result<U>): Builder<U> {
+  then<U = T>(fn: (v: Ok<T>) => U): Builder<U> {
     return this.transform(res => {
       if (res.isOk())
-        return fn(res)
+        return res.ok(fn(res))
       return res as Err
     })
   }
@@ -344,17 +344,12 @@ export function string(def?: any): Builder<any> {
 }
 
 
-export function object(): ObjectBuilder<object>
 export function object<T extends object>(specs: ObjectBuilderProps<T>): ObjectBuilder<T>
-export function object<T extends object>(specs: ObjectBuilderProps<T>, inst?: new (...a: any[]) => T): Builder<T>
-export function object<T extends object>(specs?: ObjectBuilderProps<T>, inst?: new (...a: any[]) => T): ObjectBuilder<any> {
+export function object(): ObjectBuilder<object>
+export function object<T extends object>(specs?: ObjectBuilderProps<T>): ObjectBuilder<any> {
   var res = new ObjectBuilder<T>()
   if (specs)
-    res = res.props(specs)
-  if (inst)
-    // I don't know why the typings are failing here
-    // @ts-ignore
-    res = res.createAs(inst)
+    return res.props(specs)
   return res
 }
 
