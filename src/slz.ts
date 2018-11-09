@@ -83,6 +83,10 @@ export class Builder<T> {
 
   public base_class: Function = this.constructor
 
+  is(...cls: (new (...a: any[]) => Builder<any>)[]): boolean {
+    return cls.filter(c => this.constructor === c).length > 0
+  }
+
   from(unk: unknown): Result<T> {
     return ok(unk, unk as any) as Result<any>
   }
@@ -118,10 +122,10 @@ export class Builder<T> {
     return new TransformBuilder(this, fn)
   }
 
-  then<U = T>(fn: (v: Ok<T>) => U): Builder<U> {
+  then<U = T>(fn: (v: T) => U): Builder<U> {
     return this.transform(res => {
       if (res.isOk())
-        return res.ok(fn(res))
+        return res.ok(fn(res.value))
       return res as Err
     })
   }
@@ -164,10 +168,10 @@ export class TransformBuilder<T, U> extends Builder<U> {
 export type ObjectBuilderProps<T> = {[K in keyof T]: Builder<T[K]>}
 
 
-export class ObjectBuilder<T extends object> extends Builder<T> {
+export class ObjectBuilder<T> extends Builder<T> {
 
   props<U>(props: ObjectBuilderProps<U>): ObjectBuilder<T & U> {
-
+    return this
   }
 
   /**
@@ -199,11 +203,7 @@ export class ObjectBuilder<T extends object> extends Builder<T> {
     typcheck2?: new (...a: any) => V
   ): ObjectBuilder<T> {
   // createAs<U extends T>(typ: new (...a: any[]) => U): ObjectSerializer<U> {
-      return null!
-  }
-
-  index<V>(values: Builder<V>): ObjectBuilder<{[n: string]: V}> {
-    return null!
+      throw new Error('not implemented')
   }
 
   from(t: unknown) {
@@ -239,6 +239,24 @@ export class ArrayBuilder<T> extends Builder<T[]> {
 }
 
 export class IndexBuilder<T> extends Builder<T> {
+
+  constructor(public builder: Builder<T>) {
+    super()
+  }
+
+  from(unk: unknown) {
+    if (typeof unk !== 'object' || unk == null)
+      return err(unk, 'not an object')
+    var res = {} as T
+    var b = this.builder
+    for (var x in unk) {
+      var r = b.from((unk as any)[x])
+      if (r.isError())
+        return err(unk, r.errors.map(e => `${x}: ${e}`));
+      (res as any)[x] = r.value
+    }
+    return ok(unk, res)
+  }
 
 }
 
@@ -344,9 +362,9 @@ export function string(def?: any): Builder<any> {
 }
 
 
-export function object<T extends object>(specs: ObjectBuilderProps<T>): ObjectBuilder<T>
+export function object<T extends object>(specs: T): ObjectBuilder<{[K in keyof T]: Unserializify<T[K]>}>
 export function object(): ObjectBuilder<object>
-export function object<T extends object>(specs?: ObjectBuilderProps<T>): ObjectBuilder<any> {
+export function object<T extends object>(specs?: T): ObjectBuilder<{[K in keyof T]: Unserializify<T[K]>}> {
   var res = new ObjectBuilder<T>()
   if (specs)
     return res.props(specs)
@@ -359,14 +377,17 @@ export function any() {
 }
 
 
-export function indexed<T>(items: Builder<T>): Builder<{[name: string]: T}> {
-  throw new Error('not implemented')
-  return null!
+export function indexed<T>(items: Builder<T>): IndexBuilder<T> {
+  // throw new Error('not implemented')
+  return new IndexBuilder(items)
 }
 
 
-export type Unserializify<T> = T extends Builder<infer U> ? U : T
-
+export type Unserializify<T> =
+  T extends ObjectBuilder<infer U> ? U
+  : T extends ArrayBuilder<infer U> ? U[]
+  : T extends Builder<infer U> ? U
+  : T
 
 export function tuple<Arr extends Builder<any>[]>(...builders: Arr): Builder<{[K in keyof Arr]: Unserializify<Arr[K]>}> {
   // @ts-ignore : this is correct, but it's getting complicated to have the type system agree with me.
